@@ -1,0 +1,7 @@
+#! /bin/sh
+PYTHON="/usr/bin/python"
+SOFTWARE_HOME="/home/erik/drippy"
+export PYTHONPATH SOFTWARE_HOME
+PRGDCTL="$SOFTWARE_HOME/drippy.py"
+exec "$PYTHON" "$PRGDCTL" "$@" >> /var/log/drippy 2>&1
+

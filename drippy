@@ -1,0 +1,45 @@
+#!/bin/bash
+#
+# Cherrypy Application Start
+#
+
+# Source function library.
+#. /etc/rc.d/init.d/functions
+
+prog="Drippy"
+appctl=/home/erik/drippy/start
+dirapp=/home/erik/drippy/
+lockfile=/home/erik/drippy/lock
+
+start() {
+        echo -n $"Starting $prog"
+        cd $dirapp
+        touch $lockfile
+        $appctl &
+}
+stop() {
+        echo -n $"Stopping $prog"
+        echo
+        pid=`/bin/ps -ef | grep drippy.py | grep -v grep | awk '{print $2}'`
+        kill -9 $pid && rm -f ${lockfile}
+        echo
+        echo 'ok'
+}
+
+# See how we were called.
+case "$1" in
+  restart)
+        stop
+        start
+        ;;
+  start)
+        start
+        ;;
+  stop)
+        stop
+        ;;
+  *)
+        echo $"Usage: $prog {start|stop|restart}"
+        exit 1
+esac
+

@@ -17,6 +17,14 @@ from datetime import datetime
 from cherrypy.process.plugins import Monitor
 from datetime import datetime, timedelta
 
+def time_to_gallons(time):
+    # ...at 8gph
+    return round(8 * ((time.seconds / 3600.0) + (time.days * 24)), 2)
+
+def time_to_inches(time):
+    # ...at 31 gallons per inch
+    return round(time_to_gallons(time) / 31, 2)
+
 def drip_times(color):
     times = {}
 
@@ -40,7 +48,7 @@ def drip_times(color):
                     on_dtime = line_dtime
 
         if on_state:
-            dtime = datetime.now()
+            dtime = datetime.now().replace(microsecond=0)
             key = dtime.strftime("%Y %m")
             delta = dtime - on_dtime
             times[key] = delta if not key in times else times[key] + delta
@@ -126,13 +134,13 @@ class Drippy(object):
 
             self.GRN_STATE = False
 
-    def green_times(self):
+    def green_table(self):
         times = drip_times("Green")
 
-        table_data = []
+        table_data = [['YYYY MM', 'h:mm:ss', 'gallons (@ 8GPH)', "inches (over 8' circle)"]]
 
         for k in sorted(times.iterkeys()):
-            table_data.append( [k, times[k]] )
+            table_data.append( [k, times[k], time_to_gallons(times[k]), time_to_inches(times[k])] )
 
         return HTML.table(table_data)
 
@@ -144,7 +152,7 @@ class Drippy(object):
 
     green.exposed = True
     green_control.exposed = True
-    green_times.exposed = True
+    green_table.exposed = True
     index.exposed = True
 
 

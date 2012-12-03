@@ -10,6 +10,10 @@
         $.post("green_table", function(data) {
           $("#green_table").html(data);
         });
+
+        $.post("green_schedule", function(data) {
+          $("#green_schedule").html(data);
+        });
       };
 
       $(document).ready(function() {
@@ -62,8 +66,8 @@
 	<input id="green_time_x"     type='radio'  name='time' value='x'>This many hours:
 	<input id="green_time_x_val" type='text'   disabled='disabled='>
       </form>
-      <div id="green_table">
-      </div>
+      <div id="green_table"></div>
+      <div id="green_schedule"></div>
     </div>
   </body>
 </html>

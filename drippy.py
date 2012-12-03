@@ -15,7 +15,7 @@ import HTML
 import RPi.GPIO
 from datetime import datetime
 from cherrypy.process.plugins import Monitor
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 def time_to_gallons(time):
     # ...at 8gph
@@ -25,9 +25,28 @@ def time_to_inches(time):
     # ...at 31 gallons per inch
     return round(time_to_gallons(time) / 31, 2)
 
-def drip_times(color):
+def drip_times(color, daily=False):
     times = {}
 
+    def time_insert(when, how_long):
+        key_Y = when.strftime("%Y")
+        key_m = when.strftime("%m")
+        key_d = when.strftime("%d")
+
+        if not key_Y in times:
+            times[key_Y] = {}
+            
+        if not key_m in times[key_Y]:
+            times[key_Y][key_m] = {} if daily else timedelta(0)
+
+        if daily:
+            if not key_d in times[key_Y][key_m]:
+                times[key_Y][key_m][key_d] = timedelta(0)
+
+            times[key_Y][key_m][key_d] += how_long
+        else:
+            times[key_Y][key_m] += how_long
+            
     with open('drippy.log', 'r') as f:
         on_state = False
         on_dtime = None
@@ -38,20 +57,16 @@ def drip_times(color):
 
             if color == line_color:
                 if on_state and line_op == 'Off':
+                    time_insert(line_dtime, line_dtime - on_dtime)
                     on_state = False
-                    key = line_dtime.strftime("%Y %m")
-                    delta = line_dtime - on_dtime
-                    times[key] = delta if not key in times else times[key] + delta
-                        
+
                 elif not on_state and line_op == 'On':
-                    on_state = True
                     on_dtime = line_dtime
+                    on_state = True
 
         if on_state:
-            dtime = datetime.now().replace(microsecond=0)
-            key = dtime.strftime("%Y %m")
-            delta = dtime - on_dtime
-            times[key] = delta if not key in times else times[key] + delta
+            now_dtime = datetime.now().replace(microsecond=0)
+            time_insert(now_dtime, now_dtime - on_dtime)
 
     return times
 
@@ -135,14 +150,55 @@ class Drippy(object):
             self.GRN_STATE = False
 
     def green_table(self):
+
         times = drip_times("Green")
 
-        table_data = [['YYYY MM', 'h:mm:ss', 'gallons (@ 8GPH)', "inches (over 8' circle)"]]
+        table_data = [['year', 'month', 'h:mm:ss', 'gallons (@ 8GPH)', "inches (over 8' circle)"]]
 
-        for k in sorted(times.iterkeys()):
-            table_data.append( [k, times[k], time_to_gallons(times[k]), time_to_inches(times[k])] )
+        for Y in times.iterkeys():
+            for m in times[Y].iterkeys():
+                time = times[Y][m]
+                gallons = time_to_gallons(time)
+                inches  = time_to_inches(time)
+                table_data.append( [Y, m, time, gallons, inches] )
 
         return HTML.table(table_data)
+
+    def green_schedule(self):
+        # Update the schedule
+        #
+        # Each week, catch up on any deficit for the previous
+        # month. That requires looking at the log, and determining how
+        # many inches we need to be at target. It useful to see what's
+        # coming, so this is written to make a prediction.
+        # 
+
+        # Our watering day is Thursday (3). How many days to go until thursday?
+        
+        days_to_go = { 0: 3, 1: 2, 2: 1, 3: 0, 4: 6, 5: 5, 6: 4 }[date.today().weekday()]
+
+        # How much water has been lain over 30 previous days to next
+        # scheduled date?
+
+        times = drip_times("Green", daily=True)
+
+        total_time = timedelta(0)
+
+        for day in range(30):
+            when = date.today() - timedelta(days = day)
+            Y = when.strftime("%Y")
+            m = when.strftime("%m")
+            d = when.strftime("%d")
+            
+            if Y in times:
+                if m in times[Y]:
+                    if d in times[Y][m]:
+                        total_time += times[Y][m][d]
+
+        # How much water should be laid down? Report
+        # the next period and the difference
+
+        return "In %d days, the previous 30 days will total %f inches (%s)" % (days_to_go, round(time_to_inches(total_time), 2), total_time)
 
     def index(self):
         f = open("drippy.html")
@@ -153,9 +209,10 @@ class Drippy(object):
     green.exposed = True
     green_control.exposed = True
     green_table.exposed = True
+    green_schedule.exposed = True
     index.exposed = True
 
-
+    
 cherrypy.config.update({'server.socket_host': '192.168.62.149',
                         'server.socket_port': 80,
                        })

@@ -20,7 +20,7 @@ start() {
 stop() {
         echo -n $"Stopping $prog"
         echo
-        pid=`/bin/ps -ef | grep drippy.py | grep -v grep | awk '{print $2}'`
+        pid=`/bin/ps -ef | grep ".*python.*drippy.py" | grep -v grep | awk '{print $2}'`
         kill -9 $pid && rm -f ${lockfile}
         echo
         echo 'ok'

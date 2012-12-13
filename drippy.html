@@ -7,12 +7,12 @@
           $("#green_state").text("Green is " + data);
         });
 
-        $.post("green_table", function(data) {
-          $("#green_table").html(data);
-        });
-
         $.post("green_schedule", function(data) {
           $("#green_schedule").html(data);
+        });
+ 
+        $.post("green_table", function(data) {
+          $("#green_table").html(data);
         });
       };
 
@@ -30,16 +30,10 @@
         });
 
         $("#green_on").click(function () {
-          time = $('input[name=time]:checked', '#green_form').val();
-
-          if (time == 'x') {
-            time = Number($("#green_time_x_val").val());
-          }
-          else {
-            time = Number(time);
-          }
-
-          $.post("green_control", { OnOff: "ON", OffDelay: time * 3600 }, function(data) {
+          $.post("green_control", { 
+              OnOff: "ON",
+              OnSelect: $('input[name=time]:checked', '#green_form').val(),
+              OnParam: $("#green_time_x_val").val() }, function(data) {
             green_update();
           });
 
@@ -57,17 +51,18 @@
   </head>   
   <body>
     <div id="green_div">
-      <p id="green_state"></p>
+      <div id="green_state"></div>
+      <div id="green_schedule"></div>
       <form id="green_form">
 	<input id="green_off"        type='submit' value='Off'>
 	<input id="green_on"         type='submit' value='On'>
-	<input id="green_time_2"     type='radio'  name='time' value='2' checked>2 hours
+	<input id="green_time_d"     type='radio'  name='time' value='d' checked>Deficit
+	<input id="green_time_2"     type='radio'  name='time' value='2'>2 hours
 	<input id="green_time_4"     type='radio'  name='time' value='4'>4 hours
 	<input id="green_time_x"     type='radio'  name='time' value='x'>This many hours:
 	<input id="green_time_x_val" type='text'   disabled='disabled='>
       </form>
       <div id="green_table"></div>
-      <div id="green_schedule"></div>
     </div>
   </body>
 </html>

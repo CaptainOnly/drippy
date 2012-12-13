@@ -10,6 +10,9 @@
 # When it rains, we'll take that total off the budget at a rate of
 # 4hours/inch. So, if it rains 1 inch, we'll run for 4 hours less.
 
+# Back end should be a zone id (green), and an on/off routine
+# (RPi/GPIO)
+
 import cherrypy
 import HTML
 import RPi.GPIO
@@ -24,6 +27,10 @@ def time_to_gallons(time):
 def time_to_inches(time):
     # ...at 31 gallons per inch
     return round(time_to_gallons(time) / 31, 2)
+
+def inches_to_time(inches):
+    # ...at 31 gallons per inch, 8gph
+    return timedelta(hours=inches * 31 / 8)
 
 def drip_times(color, daily=False):
     times = {}
@@ -102,7 +109,7 @@ class Drippy(object):
     def run(self):
         if self.GRN_STATE is True:
             pass
-        if self.GRN_STATE is False:
+        elif self.GRN_STATE is False:
             pass
         else:
             try:
@@ -126,20 +133,22 @@ class Drippy(object):
         else:
             return "Off"
 
-    def green_control(self, OnOff=None, OffDelay=None):
+    def green_control(self, OnOff=None, OnSelect=None, OnParam=None):
         if OnOff=="ON":
             RPi.GPIO.output(self.GRN_GPIO, RPi.GPIO.HIGH)
 
             with open('drippy.log', 'a') as f:
                 f.write("Green On " + datetime.now().ctime() + "\n")
 
-            if not OffDelay:
-                self.GRN_STATE = True
+            if OnSelect=='2':
+                self.GRN_STATE = 2 * 3600
+            elif OnSelect=='4':
+                self.GRN_STATE = 4 * 3600
+            elif OnSelect=='x':
+                self.GRN_STATE = int(float(OnParam) * 3600)
             else:
-                try:
-                    self.GRN_STATE = int(OffDelay)
-                except:
-                    self.GRN_STATE = 1
+                days_to_go, inches, time = self.history()
+                self.GRN_STATE = inches_to_time(0.75 - inches).seconds
 
         else:
             RPi.GPIO.output(self.GRN_GPIO, RPi.GPIO.LOW)
@@ -164,14 +173,13 @@ class Drippy(object):
 
         return HTML.table(table_data)
 
-    def green_schedule(self):
+    def history(self):
         # Update the schedule
         #
         # Each week, catch up on any deficit for the previous
         # month. That requires looking at the log, and determining how
         # many inches we need to be at target. It useful to see what's
         # coming, so this is written to make a prediction.
-        # 
 
         # Our watering day is Thursday (3). How many days to go until thursday?
         
@@ -185,7 +193,7 @@ class Drippy(object):
         total_time = timedelta(0)
 
         for day in range(30):
-            when = date.today() - timedelta(days = day)
+            when = date.today() + timedelta(days = days_to_go) - timedelta(days = day)
             Y = when.strftime("%Y")
             m = when.strftime("%m")
             d = when.strftime("%d")
@@ -195,10 +203,19 @@ class Drippy(object):
                     if d in times[Y][m]:
                         total_time += times[Y][m][d]
 
-        # How much water should be laid down? Report
-        # the next period and the difference
+        return (days_to_go, round(time_to_inches(total_time), 2), total_time)
 
-        return "In %d days, the previous 30 days will total %f inches (%s)" % (days_to_go, round(time_to_inches(total_time), 2), total_time)
+    def green_schedule(self):
+        days_to_go, inches, time = self.history()
+
+        result = ""
+
+        if days_to_go > 0:
+            result += "In %d days, the previous 30 days will total " % days_to_go
+        else:
+            result += "The previous 30 days total "
+
+        return result + "%f inches (%s). The deficit will be %f." % (inches, time, 0.75 - inches)
 
     def index(self):
         f = open("drippy.html")

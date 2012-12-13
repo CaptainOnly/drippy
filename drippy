@@ -12,16 +12,16 @@ dirapp=/home/erik/drippy/
 lockfile=/home/erik/drippy/lock
 
 start() {
-        echo -n $"Starting $prog"
+        echo $"Starting $prog"
         cd $dirapp
         touch $lockfile
         $appctl &
 }
 stop() {
-        echo -n $"Stopping $prog"
+        echo $"Stopping $prog"
         echo
         pid=`/bin/ps -ef | grep ".*python.*drippy.py" | grep -v grep | awk '{print $2}'`
-        kill -9 $pid && rm -f ${lockfile}
+        kill -n 9 $pid && rm -f ${lockfile}
         echo
         echo 'ok'
 }

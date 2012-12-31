@@ -164,8 +164,8 @@ class Drippy(object):
 
         table_data = [['year', 'month', 'h:mm:ss', 'gallons (@ 8GPH)', "inches (over 8' circle)"]]
 
-        for Y in times.iterkeys():
-            for m in times[Y].iterkeys():
+        for Y in sorted(times.iterkeys(), reverse=True):
+            for m in sorted(times[Y].iterkeys(), reverse=True):
                 time = times[Y][m]
                 gallons = time_to_gallons(time)
                 inches  = time_to_inches(time)
@@ -215,7 +215,7 @@ class Drippy(object):
         else:
             result += "The previous 30 days total "
 
-        return result + "%f inches (%s). The deficit will be %f." % (inches, time, 0.75 - inches)
+        return result + "%f inches (%s). The deficit will be %f." % (inches, time, 3.0 - inches)
 
     def index(self):
         f = open("drippy.html")

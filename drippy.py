@@ -10,27 +10,157 @@
 # When it rains, we'll take that total off the budget at a rate of
 # 4hours/inch. So, if it rains 1 inch, we'll run for 4 hours less.
 
-# Back end should be a zone id (green), and an on/off routine
-# (RPi/GPIO)
+# MOVE THE LOGGING TO main class. Have main class reload drip times each time log written. 
 
-import cherrypy
+import os
 import HTML
+import json
 import RPi.GPIO
-from datetime import datetime
+import cherrypy
 from cherrypy.process.plugins import Monitor
+from cherrypy.lib.static import serve_file
+import datetime
 from datetime import date, datetime, timedelta
 
-def time_to_gallons(time):
-    # ...at 8gph
-    return round(8 * ((time.seconds / 3600.0) + (time.days * 24)), 2)
+class DripZone(object):
+    # Drippy draws a webpage for a set of DripZones, and allows them
+    # to be controlled directly. It also logs events on zones and uses
+    # that information to automate them. The DripZone class is all the
+    # zone specific methods that drippy needs to accomplish that.
 
-def time_to_inches(time):
-    # ...at 31 gallons per inch
-    return round(time_to_gallons(time) / 31, 2)
+    # The zone state can be off (False), on (True), or on for a
+    # certain number of seconds (integer).
+    STATE = False
+    
+    def on(self, seconds=None):
+        RPi.GPIO.output(self.zone_gpio(), RPi.GPIO.HIGH)
+        
+        if int(seconds) == 0:
+            self.STATE = True
+        else:
+            self.STATE = int(seconds)
 
-def inches_to_time(inches):
-    # ...at 31 gallons per inch, 8gph
-    return timedelta(hours=inches * 31 / 8)
+    def off(self):
+        RPi.GPIO.output(self.zone_gpio(), RPi.GPIO.LOW)
+        
+        self.STATE = False
+
+    def __init__(self):
+        RPi.GPIO.setup(self.zone_gpio(), RPi.GPIO.OUT)
+        self.off()
+
+    def __del__(self):
+        self.off()
+
+    def time_to_gallons(self, time):
+        # Drippy works in time. This method turns time into gallons of
+        # water dripped for this zone.
+        return round(self.zone_gph() * ((time.seconds / 3600.0) + (time.days * 24)), 2)
+
+    def time_to_inches(self, time):
+        # Drippy works in time. This method turns time into equivalent
+        # inches of rain for this zone.
+        return round(time_to_gallons(time) / self.zone_gpi(), 2)
+
+    def inches_to_time(self, inches):
+        # Drippy works in time. This method turns an estimate of
+        # inches of back into time
+        return timedelta(hours=inches * self.zone_gpi() / self.zone_gph())
+
+    def run(self):
+        # Drippy calls this method for each zone once per
+        # second. Zones use this to automate their execution
+
+        if self.STATE is False:
+            # Is it time to run automatically?
+            # How long to run automatically for?
+            # days_to_go, inches, time = self.history()
+            # self.STATE = inches_to_time(0.75 - inches).seconds
+            pass
+
+        elif self.STATE <= 0:
+            self.control("OFF");
+        else:
+            try:
+                self.STATE = self.STATE - 1
+            except:
+                self.control("OFF");
+
+    def state(self):
+        if self.STATE:
+            try:
+                return "On (for %d seconds more)" % self.STATE
+            except:
+                self.control("OFF");
+                return "Off"
+        else:
+            return "Off"
+
+class Green(DripZone):
+    # This zone is watered once a week and gets the equivalent of 0.75
+    # inches of water per week over the previous 28 days.
+    
+    def zone_name(self):
+        return "Green"
+
+    def zone_gpio(self):
+        return 13
+
+    def zone_gph(self):
+        # gallons per hour while running
+        return 8
+
+    def zone_gpi(self):
+        # number of gallons for the equivalnet of an inch of rain
+        return 31
+
+class Red(DripZone):
+    
+    def zone_name(self):
+        return "Red"
+
+    def zone_gpio(self):
+        return 15
+
+    def zone_gph(self):
+        # gallons per hour while running
+        return 8
+
+    def zone_gpi(self):
+        # number of gallons for the equivalnet of an inch of rain
+        return 31
+
+class XX1(DripZone):
+    
+    def zone_name(self):
+        return "XX1"
+
+    def zone_gpio(self):
+        return 11
+
+    def zone_gph(self):
+        # gallons per hour while running
+        return 8
+
+    def zone_gpi(self):
+        # number of gallons for the equivalnet of an inch of rain
+        return 31
+
+class XX2(DripZone):
+    
+    def zone_name(self):
+        return "XX2"
+
+    def zone_gpio(self):
+        return 12
+
+    def zone_gph(self):
+        # gallons per hour while running
+        return 8
+
+    def zone_gpi(self):
+        # number of gallons for the equivalnet of an inch of rain
+        return 31
 
 def drip_times(color, daily=False):
     times = {}
@@ -78,89 +208,75 @@ def drip_times(color, daily=False):
     return times
 
 class Drippy(object):
-    # GPIO names
-    XX1_GPIO = 11
-    XX2_GPIO = 12
-    RED_GPIO = 15
-    GRN_GPIO = 13
+    # This is the main class for the web UI.
 
-    # Remember if zone is on or off
-    GRN_STATE = False
+    def __init__(self, zones):
+        self.zones = zones;
 
-    def __init__(self):
-        RPi.GPIO.setmode(RPi.GPIO.BOARD)
+    def index(self):
+        return serve_file(os.path.abspath("drippy.html"))
 
-        RPi.GPIO.setup(self.XX1_GPIO, RPi.GPIO.OUT)
-        RPi.GPIO.setup(self.XX2_GPIO, RPi.GPIO.OUT)
-        RPi.GPIO.setup(self.GRN_GPIO, RPi.GPIO.OUT)
-        RPi.GPIO.setup(self.RED_GPIO, RPi.GPIO.OUT)
+    def main_script(self):
+        return serve_file(os.path.abspath("drippy.js"), "application/javascript")
 
-        RPi.GPIO.output(self.XX1_GPIO, RPi.GPIO.LOW)
-        RPi.GPIO.output(self.XX2_GPIO, RPi.GPIO.LOW)
-        RPi.GPIO.output(self.GRN_GPIO, RPi.GPIO.LOW)
-        RPi.GPIO.output(self.RED_GPIO, RPi.GPIO.LOW)
-
-    def __del__(self):
-        RPi.GPIO.output(self.XX1_GPIO, RPi.GPIO.LOW)
-        RPi.GPIO.output(self.XX2_GPIO, RPi.GPIO.LOW)
-        RPi.GPIO.output(self.GRN_GPIO, RPi.GPIO.LOW)
-        RPi.GPIO.output(self.RED_GPIO, RPi.GPIO.LOW)
-        
     def run(self):
-        if self.GRN_STATE is True:
-            pass
-        elif self.GRN_STATE is False:
-            pass
-        else:
-            try:
-                if self.GRN_STATE == 0:
-                    self.green_control("OFF");
-                else:
-                    self.GRN_STATE = self.GRN_STATE - 1
-            except:
-                self.green_control("OFF");
+        # Call the run method on each zone, passing them the information they need
+        pass
 
-    def green(self):
-        if self.GRN_STATE:
-            if self.GRN_STATE is True:
-                return "On"
-            else:
-                try:
-                    return "On (for %d seconds)" % self.GRN_STATE
-                except:
-                    self.green_control("OFF");
-                    return "Off"
-        else:
-            return "Off"
+    def zone_list(self):
+        # Return a list of zone names that can be passed to the other methods
+        return json.dumps(self.zones.keys())
 
-    def green_control(self, OnOff=None, OnSelect=None, OnParam=None):
+    def zone_state(self, Name):
+        # Get the state of the zone as a string
+        return self.zones[Name].state()
+
+    def zone_control(self, Name, OnOff=None, OnSelect=None, OnParam=None):
+
+        zone_id = self.zones[Name].zone_name()
+
         if OnOff=="ON":
-            RPi.GPIO.output(self.GRN_GPIO, RPi.GPIO.HIGH)
 
-            with open('drippy.log', 'a') as f:
-                f.write("Green On " + datetime.now().ctime() + "\n")
+            log_message = "%s On  %s\n" (zone_id, datetime.now().ctime())
+
+            try:
+                with open('drippy.log', 'a') as f:
+                    f.write(log_message)
+            except:
+                cherrypy.log("Couldn't write on time to log file: %s" % log_message)
+
+            on_seconds = 0
 
             if OnSelect=='2':
-                self.GRN_STATE = 2 * 3600
+                on_seconds = 2 * 3600
             elif OnSelect=='4':
-                self.GRN_STATE = 4 * 3600
+                on_seconds = 4 * 3600
             elif OnSelect=='x':
-                self.GRN_STATE = int(float(OnParam) * 3600)
+                on_seconds = int(float(OnParam) * 3600)
             else:
-                days_to_go, inches, time = self.history()
-                self.GRN_STATE = inches_to_time(0.75 - inches).seconds
+                # Use history and schedule to decide how long to run for 
+                #days_to_go, inches, time = self.history()
+                #self.STATE = inches_to_time(0.75 - inches).seconds
+                on_seconds = 3600
+
+            self.zones[Name].on(seconds)
 
         else:
-            RPi.GPIO.output(self.GRN_GPIO, RPi.GPIO.LOW)
+            self.zones[Name].off()
 
-            with open('drippy.log', 'a') as f:
-                f.write("Green Off " + datetime.now().ctime() + "\n")
+            log_message = "%s Off %s\n" (zone_id, datetime.now().ctime())
 
-            self.GRN_STATE = False
+            try:
+                with open('drippy.log', 'a') as f:
+                    f.write(log_message)
+            except:
+                cherrypy.log("Couldn't write off time to log file: %s" % log_message)
 
-    def green_table(self):
+    def zone_table(self):
 
-        times = drip_times("Green")
+        zone_id = self.zones[Name].zone_name()
+
+        times = drip_times(zone_id)
 
         table_data = [['year', 'month', 'h:mm:ss', 'gallons (@ 8GPH)', "inches (over 8' circle)"]]
 
@@ -217,31 +333,31 @@ class Drippy(object):
 
         return result + "%f inches (%s). The deficit will be %f." % (inches, time, 3.0 - inches)
 
-    def index(self):
-        f = open("drippy.html")
-        drippy_html = f.read()
-        f.close
-        return drippy_html
-
-    green.exposed = True
-    green_control.exposed = True
-    green_table.exposed = True
-    green_schedule.exposed = True
     index.exposed = True
+    main_script.exposed = True
+    zone_list.exposed = True
+    zone_state.exposed = True
+    zone_control.exposed = True
 
+# GPIO on the RaspberryPy can be addressed as board resources or
+# something else
+RPi.GPIO.setmode(RPi.GPIO.BOARD) 
     
+# Not sure why I need this
 cherrypy.config.update({'server.socket_host': '192.168.62.149',
                         'server.socket_port': 80,
                        })
 
-drippy = Drippy()
+# Create zones and a web UI class for them
+drippy = Drippy({ "Landscape" : Green(), "Garden" : Red()})
 
 # This calls the run() method on drippy once a second. I have no idea
-# why this works, but it does.
+# how/why this works, but it does.
 # 
 # http://stackoverflow.com/questions/9207591/cherrypy-with-additional-threads-for-custom-jobs
 #
-Monitor(cherrypy.engine, drippy.run, frequency=1).subscribe()
+#Monitor(cherrypy.engine, drippy.run, frequency=1).subscribe()
 
+# Finally, start the web server
 cherrypy.quickstart(drippy)
 

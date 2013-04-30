@@ -1,68 +1,9 @@
 <html>                                                                  
   <head>                                                                  
     <script src="//ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
-    <script type="text/javascript">                                         
-      function green_update() {
-        $.post("green", function(data) {
-          $("#green_state").text("Green is " + data);
-        });
-
-        $.post("green_schedule", function(data) {
-          $("#green_schedule").html(data);
-        });
- 
-        $.post("green_table", function(data) {
-          $("#green_table").html(data);
-        });
-      };
-
-      $(document).ready(function() {
-        green_update();
-        setInterval(function(){green_update();}, 1000);
-      
-        $("#green_time_x").change(function () {
-          if ($("#green_time_x").val() == 'x') {
-            $("#green_time_x_val").removeAttr("disabled");
-          }
-          else {
-            $("#green_time_x_val").attr("disabled", "disabled");
-          }
-        });
-
-        $("#green_on").click(function () {
-          $.post("green_control", { 
-              OnOff: "ON",
-              OnSelect: $('input[name=time]:checked', '#green_form').val(),
-              OnParam: $("#green_time_x_val").val() }, function(data) {
-            green_update();
-          });
-
-          return false;
-        });
-
-        $("#green_off").click(function () {
-          $.post("green_control", { OnOff: "OFF" }, function(data) {
-            green_update();
-          });
-          return false;
-        });
-      });
-    </script>                                                               
+    <script src="main_script"></script>                                                               
   </head>   
   <body>
-    <div id="green_div">
-      <div id="green_state"></div>
-      <div id="green_schedule"></div>
-      <form id="green_form">
-	<input id="green_off"        type='submit' value='Off'>
-	<input id="green_on"         type='submit' value='On'>
-	<input id="green_time_d"     type='radio'  name='time' value='d' checked>Deficit
-	<input id="green_time_2"     type='radio'  name='time' value='2'>2 hours
-	<input id="green_time_4"     type='radio'  name='time' value='4'>4 hours
-	<input id="green_time_x"     type='radio'  name='time' value='x'>This many hours:
-	<input id="green_time_x_val" type='text'   disabled='disabled='>
-      </form>
-      <div id="green_table"></div>
-    </div>
+    <div id="zone_list"></div>
   </body>
 </html>

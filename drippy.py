@@ -28,6 +28,13 @@ class DripZone(object):
     # that information to automate them. The DripZone class is all the
     # zone specific methods that drippy needs to accomplish that.
 
+    def __init__(self):
+        RPi.GPIO.setup(self.zone_gpio(), RPi.GPIO.OUT)
+        self.off()
+
+    def __del__(self):
+        self.off()
+
     # The zone state can be off (False), on (True), or on for a
     # certain number of seconds (integer).
     STATE = False
@@ -35,8 +42,8 @@ class DripZone(object):
     def on(self, seconds=None):
         RPi.GPIO.output(self.zone_gpio(), RPi.GPIO.HIGH)
         
-        if int(seconds) == 0:
-            self.STATE = True
+        if seconds is None:
+            self.STATE = -1
         else:
             self.STATE = int(seconds)
 
@@ -45,12 +52,32 @@ class DripZone(object):
         
         self.STATE = False
 
-    def __init__(self):
-        RPi.GPIO.setup(self.zone_gpio(), RPi.GPIO.OUT)
-        self.off()
+    def run(self):
+        # Drippy calls this method for each zone once per
+        # second. Zones use this to automate their execution
 
-    def __del__(self):
-        self.off()
+        if self.STATE > 0:
+            self.STATE -= 1
+            
+            if self.STATE == 0:
+                self.off()
+
+        elif self.STATE == 0:
+            # Is it time to run automatically?
+            # How long to run automatically for?
+            # days_to_go, inches, time = self.history()
+            # self.STATE = inches_to_time(0.75 - inches).seconds
+            pass
+
+    def state(self):
+        if self.STATE > 0:
+            return "On (for %d seconds more)" % self.STATE
+
+        elif self.STATE == 0:
+            return "Off"
+
+        else:
+            return ""
 
     def time_to_gallons(self, time):
         # Drippy works in time. This method turns time into gallons of
@@ -67,41 +94,12 @@ class DripZone(object):
         # inches of back into time
         return timedelta(hours=inches * self.zone_gpi() / self.zone_gph())
 
-    def run(self):
-        # Drippy calls this method for each zone once per
-        # second. Zones use this to automate their execution
-
-        if self.STATE is False:
-            # Is it time to run automatically?
-            # How long to run automatically for?
-            # days_to_go, inches, time = self.history()
-            # self.STATE = inches_to_time(0.75 - inches).seconds
-            pass
-
-        elif self.STATE <= 0:
-            self.control("OFF");
-        else:
-            try:
-                self.STATE = self.STATE - 1
-            except:
-                self.control("OFF");
-
-    def state(self):
-        if self.STATE:
-            try:
-                return "On (for %d seconds more)" % self.STATE
-            except:
-                self.control("OFF");
-                return "Off"
-        else:
-            return "Off"
-
 class Green(DripZone):
     # This zone is watered once a week and gets the equivalent of 0.75
     # inches of water per week over the previous 28 days.
     
     def zone_name(self):
-        return "Green"
+        return "Landscape"
 
     def zone_gpio(self):
         return 13
@@ -117,7 +115,7 @@ class Green(DripZone):
 class Red(DripZone):
     
     def zone_name(self):
-        return "Red"
+        return "Garden"
 
     def zone_gpio(self):
         return 15
@@ -221,23 +219,27 @@ class Drippy(object):
 
     def run(self):
         # Call the run method on each zone, passing them the information they need
-        pass
+        for k in self.zones.keys():
+            self.zones[k].run()
 
     def zone_list(self):
         # Return a list of zone names that can be passed to the other methods
-        return json.dumps(self.zones.keys())
+        zl = []
 
-    def zone_state(self, Name):
+        for k in self.zones.keys():
+            zl.append({ 'ID' : k, 'Name' : self.zones[k].zone_name() })
+
+        return json.dumps(zl)
+
+    def zone_state(self, ID):
         # Get the state of the zone as a string
-        return self.zones[Name].state()
+        return self.zones[ID].state()
 
-    def zone_control(self, Name, OnOff=None, OnSelect=None, OnParam=None):
-
-        zone_id = self.zones[Name].zone_name()
+    def zone_control(self, ID, OnOff=None, OnSelect=None, OnParam=None):
 
         if OnOff=="ON":
 
-            log_message = "%s On  %s\n" (zone_id, datetime.now().ctime())
+            log_message = "%s On  %s\n" % (ID, datetime.now().ctime())
 
             try:
                 with open('drippy.log', 'a') as f:
@@ -259,12 +261,12 @@ class Drippy(object):
                 #self.STATE = inches_to_time(0.75 - inches).seconds
                 on_seconds = 3600
 
-            self.zones[Name].on(seconds)
+            self.zones[ID].on(on_seconds)
 
         else:
-            self.zones[Name].off()
+            self.zones[ID].off()
 
-            log_message = "%s Off %s\n" (zone_id, datetime.now().ctime())
+            log_message = "%s Off %s\n" % (ID, datetime.now().ctime())
 
             try:
                 with open('drippy.log', 'a') as f:
@@ -348,15 +350,15 @@ cherrypy.config.update({'server.socket_host': '192.168.62.149',
                         'server.socket_port': 80,
                        })
 
-# Create zones and a web UI class for them
-drippy = Drippy({ "Landscape" : Green(), "Garden" : Red()})
+# Create zones and assign IDs for them
+drippy = Drippy({ "Green" : Green(), "Red" : Red() })
 
 # This calls the run() method on drippy once a second. I have no idea
 # how/why this works, but it does.
 # 
 # http://stackoverflow.com/questions/9207591/cherrypy-with-additional-threads-for-custom-jobs
 #
-#Monitor(cherrypy.engine, drippy.run, frequency=1).subscribe()
+Monitor(cherrypy.engine, drippy.run, frequency=1).subscribe()
 
 # Finally, start the web server
 cherrypy.quickstart(drippy)

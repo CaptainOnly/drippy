@@ -22,6 +22,51 @@ from cherrypy.lib.static import serve_file
 import datetime
 from datetime import date, datetime, timedelta
 
+def drip_times(f, id, daily=False):
+
+    times = {}
+
+    def time_insert(when, how_long):
+        key_Y = when.strftime("%Y")
+        key_m = when.strftime("%m")
+        key_d = when.strftime("%d")
+
+        if not key_Y in times:
+            times[key_Y] = {}
+            
+        if not key_m in times[key_Y]:
+            times[key_Y][key_m] = {} if daily else timedelta(0)
+
+        if daily:
+            if not key_d in times[key_Y][key_m]:
+                times[key_Y][key_m][key_d] = timedelta(0)
+
+            times[key_Y][key_m][key_d] += how_long
+        else:
+            times[key_Y][key_m] += how_long
+            
+    on_state = False
+    on_dtime = None
+    
+    for line in f:
+        line_id, line_op, line_ctime = line.split(None, 2)
+        line_dtime = datetime.strptime(line_ctime, "%a %b %d %H:%M:%S %Y\n")
+
+        if id == line_id:
+            if on_state and line_op == 'Off':
+                time_insert(line_dtime, line_dtime - on_dtime)
+                on_state = False
+
+            elif not on_state and line_op == 'On':
+                on_dtime = line_dtime
+                on_state = True
+
+    if on_state:
+        now_dtime = datetime.now().replace(microsecond=0)
+        time_insert(now_dtime, now_dtime - on_dtime)
+
+    return times
+
 class DripZone(object):
     # Drippy draws a webpage for a set of DripZones, and allows them
     # to be controlled directly. It also logs events on zones and uses
@@ -40,15 +85,26 @@ class DripZone(object):
     STATE = False
     
     def on(self, seconds=None):
-        RPi.GPIO.output(self.zone_gpio(), RPi.GPIO.HIGH)
         
+        log_message = "%s On  %s\n" % (self.zone_id(), datetime.now().ctime())
+
+        with open('drippy.log', 'a') as f:
+            f.write(log_message)
+
         if seconds is None:
             self.STATE = -1
         else:
             self.STATE = int(seconds)
 
+        RPi.GPIO.output(self.zone_gpio(), RPi.GPIO.HIGH)
+
     def off(self):
         RPi.GPIO.output(self.zone_gpio(), RPi.GPIO.LOW)
+
+        log_message = "%s Off %s\n" % (self.zone_id(), datetime.now().ctime())
+
+        with open('drippy.log', 'a') as f:
+            f.write(log_message)
         
         self.STATE = False
 
@@ -71,10 +127,10 @@ class DripZone(object):
 
     def state(self):
         if self.STATE > 0:
-            return "On (for %d seconds more)" % self.STATE
+            return "on (for %d seconds more)" % self.STATE
 
         elif self.STATE == 0:
-            return "Off"
+            return "off"
 
         else:
             return ""
@@ -87,17 +143,36 @@ class DripZone(object):
     def time_to_inches(self, time):
         # Drippy works in time. This method turns time into equivalent
         # inches of rain for this zone.
-        return round(time_to_gallons(time) / self.zone_gpi(), 2)
+        return round(self.time_to_gallons(time) / self.zone_gpi(), 2)
 
     def inches_to_time(self, inches):
         # Drippy works in time. This method turns an estimate of
         # inches of back into time
         return timedelta(hours=inches * self.zone_gpi() / self.zone_gph())
 
+    def table(self):
+
+        table_data = [['year', 'month', 'h:mm:ss', 'gallons (@ 8GPH)', "inches (over 8' circle)"]]
+            
+        with open('drippy.log', 'r') as f:
+            times = drip_times(f, self.zone_id())
+
+            for Y in sorted(times.iterkeys(), reverse=True):
+                for m in sorted(times[Y].iterkeys(), reverse=True):
+                    time = times[Y][m]
+                    gallons = self.time_to_gallons(time)
+                    inches  = self.time_to_inches(time)
+                    table_data.append( [Y, m, time, gallons, inches] )
+
+        return HTML.table(table_data)
+
 class Green(DripZone):
     # This zone is watered once a week and gets the equivalent of 0.75
     # inches of water per week over the previous 28 days.
     
+    def zone_id(self):
+        return "Green"
+
     def zone_name(self):
         return "Landscape"
 
@@ -114,6 +189,9 @@ class Green(DripZone):
 
 class Red(DripZone):
     
+    def zone_id(self):
+        return "Red"
+
     def zone_name(self):
         return "Garden"
 
@@ -130,6 +208,9 @@ class Red(DripZone):
 
 class XX1(DripZone):
     
+    def zone_id(self):
+        return "XX1"
+
     def zone_name(self):
         return "XX1"
 
@@ -146,6 +227,9 @@ class XX1(DripZone):
 
 class XX2(DripZone):
     
+    def zone_id(self):
+        return "XX2"
+
     def zone_name(self):
         return "XX2"
 
@@ -160,56 +244,14 @@ class XX2(DripZone):
         # number of gallons for the equivalnet of an inch of rain
         return 31
 
-def drip_times(color, daily=False):
-    times = {}
-
-    def time_insert(when, how_long):
-        key_Y = when.strftime("%Y")
-        key_m = when.strftime("%m")
-        key_d = when.strftime("%d")
-
-        if not key_Y in times:
-            times[key_Y] = {}
-            
-        if not key_m in times[key_Y]:
-            times[key_Y][key_m] = {} if daily else timedelta(0)
-
-        if daily:
-            if not key_d in times[key_Y][key_m]:
-                times[key_Y][key_m][key_d] = timedelta(0)
-
-            times[key_Y][key_m][key_d] += how_long
-        else:
-            times[key_Y][key_m] += how_long
-            
-    with open('drippy.log', 'r') as f:
-        on_state = False
-        on_dtime = None
-
-        for line in f:
-            line_color, line_op, line_ctime = line.split(None, 2)
-            line_dtime = datetime.strptime(line_ctime, "%a %b %d %H:%M:%S %Y\n")
-
-            if color == line_color:
-                if on_state and line_op == 'Off':
-                    time_insert(line_dtime, line_dtime - on_dtime)
-                    on_state = False
-
-                elif not on_state and line_op == 'On':
-                    on_dtime = line_dtime
-                    on_state = True
-
-        if on_state:
-            now_dtime = datetime.now().replace(microsecond=0)
-            time_insert(now_dtime, now_dtime - on_dtime)
-
-    return times
-
 class Drippy(object):
     # This is the main class for the web UI.
 
     def __init__(self, zones):
-        self.zones = zones;
+        self.zones = { }
+
+        for z in zones:
+            self.zones[ z.zone_id() ] = z;
 
     def index(self):
         return serve_file(os.path.abspath("drippy.html"))
@@ -239,14 +281,6 @@ class Drippy(object):
 
         if OnOff=="ON":
 
-            log_message = "%s On  %s\n" % (ID, datetime.now().ctime())
-
-            try:
-                with open('drippy.log', 'a') as f:
-                    f.write(log_message)
-            except:
-                cherrypy.log("Couldn't write on time to log file: %s" % log_message)
-
             on_seconds = 0
 
             if OnSelect=='2':
@@ -261,35 +295,20 @@ class Drippy(object):
                 #self.STATE = inches_to_time(0.75 - inches).seconds
                 on_seconds = 3600
 
-            self.zones[ID].on(on_seconds)
+            try:
+                self.zones[ID].on(on_seconds)
+            except:
+                cherrypy.log("Couldn't write on time to log file: %s" % log_message)
 
         else:
-            self.zones[ID].off()
-
-            log_message = "%s Off %s\n" % (ID, datetime.now().ctime())
-
             try:
-                with open('drippy.log', 'a') as f:
-                    f.write(log_message)
+                self.zones[ID].off()
             except:
                 cherrypy.log("Couldn't write off time to log file: %s" % log_message)
 
-    def zone_table(self):
+    def zone_table(self, ID):
 
-        zone_id = self.zones[Name].zone_name()
-
-        times = drip_times(zone_id)
-
-        table_data = [['year', 'month', 'h:mm:ss', 'gallons (@ 8GPH)', "inches (over 8' circle)"]]
-
-        for Y in sorted(times.iterkeys(), reverse=True):
-            for m in sorted(times[Y].iterkeys(), reverse=True):
-                time = times[Y][m]
-                gallons = time_to_gallons(time)
-                inches  = time_to_inches(time)
-                table_data.append( [Y, m, time, gallons, inches] )
-
-        return HTML.table(table_data)
+        return self.zones[ID].table()
 
     def history(self):
         # Update the schedule
@@ -340,6 +359,7 @@ class Drippy(object):
     zone_list.exposed = True
     zone_state.exposed = True
     zone_control.exposed = True
+    zone_table.exposed = True
 
 # GPIO on the RaspberryPy can be addressed as board resources or
 # something else
@@ -351,7 +371,7 @@ cherrypy.config.update({'server.socket_host': '192.168.62.149',
                        })
 
 # Create zones and assign IDs for them
-drippy = Drippy({ "Green" : Green(), "Red" : Red() })
+drippy = Drippy( [Green(), Red()] )
 
 # This calls the run() method on drippy once a second. I have no idea
 # how/why this works, but it does.

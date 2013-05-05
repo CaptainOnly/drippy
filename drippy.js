@@ -45,6 +45,9 @@ function zone_div(zone_id, zone_name) {
 
     var update_function = function(data) {
 	$.post("zone_state", { ID: zone_id }, function(data) {
+	    if( data.indexOf("on") !== -1 ) {
+		setTimeout(update_function, 1000);}
+
             $("#" + zone_id + " > #name").text(zone_name + " is " + data);
 	});
 
@@ -52,14 +55,10 @@ function zone_div(zone_id, zone_name) {
         //     $("#" + zone_id + " > #schedule").html(data);
 	// });
     
-	// $.post("green_table", function(data) {
-        //     $("#" + zone_id + " > #table").html(data);
-	// });
+	$.post("zone_table", { ID: zone_id }, function(data) {
+            $("#" + zone_id + " > #table").html(data);
+	});
     };
-
-    // Update once a second
-
-    setInterval(update_function, 1000);
 
     // Send the "on" message when "on" clicked
 
@@ -82,6 +81,10 @@ function zone_div(zone_id, zone_name) {
 
         return false;
     });
+
+    // drive first update 
+
+    update_function();
 };
 
 $(document).ready(function() {

@@ -19,11 +19,11 @@ import RPi.GPIO
 import cherrypy
 from cherrypy.process.plugins import Monitor
 from cherrypy.lib.static import serve_file
-import datetime
-from datetime import date, datetime, timedelta
+from datetime import datetime, date, timedelta
 
 def drip_times(f, id, daily=False):
-
+    """From file f, return a table of drip times for is"""
+ 
     times = {}
 
     def time_insert(when, how_long):
@@ -93,6 +93,11 @@ class DripZone(object):
 
         if seconds is None:
             self.STATE = -1
+        elif seconds == "schedule":
+            # TODO Use history and schedule to decide how long to run for 
+            # days_to_go, inches, time = self.history()
+            # self.STATE = inches_to_time(0.75 - inches).seconds
+            self.STATE = 3600
         else:
             self.STATE = int(seconds)
 
@@ -166,6 +171,52 @@ class DripZone(object):
 
         return HTML.table(table_data)
 
+    def history(self):
+
+        # Our watering day is Thursday (3). How many days to go until thursday?
+        
+        days_to_go = { 0: 3, 1: 2, 2: 1, 3: 0, 4: 6, 5: 5, 6: 4 }[date.today().weekday()]
+
+        # How much water has been lain over 30 previous days to next
+        # scheduled date?
+
+        with open('drippy.log', 'r') as f:
+            times = drip_times(f, self.zone_id(), daily=True)
+
+        total_time = timedelta(0)
+
+        for day in range(30):
+            when = date.today() + timedelta(days = days_to_go) - timedelta(days = day)
+            Y = when.strftime("%Y")
+            m = when.strftime("%m")
+            d = when.strftime("%d")
+            
+            if Y in times:
+                if m in times[Y]:
+                    if d in times[Y][m]:
+                        total_time += times[Y][m][d]
+
+        return (days_to_go, round(self.time_to_inches(total_time), 2), total_time)
+
+    def schedule(self):
+        # Update the schedule
+        #
+        # Each week, catch up on any deficit for the previous
+        # month. That requires looking at the log, and determining how
+        # many inches we need to be at target. It useful to see what's
+        # coming, so this is written to make a prediction.
+
+        days_to_go, inches, time = self.history()
+
+        result = ""
+
+        if days_to_go > 0:
+            result += "In %d days, the previous 30 days will total " % days_to_go
+        else:
+            result += "The previous 30 days total "
+
+        return result + "%f inches (%s). The deficit will be %f." % (inches, time, 3.0 - inches)
+
 class Green(DripZone):
     # This zone is watered once a week and gets the equivalent of 0.75
     # inches of water per week over the previous 28 days.
@@ -184,8 +235,15 @@ class Green(DripZone):
         return 8
 
     def zone_gpi(self):
-        # number of gallons for the equivalnet of an inch of rain
+        # number of gallons for the equivalent of an inch of rain
+        #
+        # this is based on 8 1gph drippers on an 8' circumerence
+        # circle which is what we put on the small live oak we planted
         return 31
+
+    def zone_days_to_go(self):
+        # Our watering day is Thursday (3). How many days to go until thursday?
+        return { 0: 3, 1: 2, 2: 1, 3: 0, 4: 6, 5: 5, 6: 4 }[date.today().weekday()]
 
 class Red(DripZone):
     
@@ -205,6 +263,10 @@ class Red(DripZone):
     def zone_gpi(self):
         # number of gallons for the equivalnet of an inch of rain
         return 31
+
+    def zone_days_to_go(self):
+        # Our watering day is Thursday (3). How many days to go until thursday?
+        return { 0: 3, 1: 2, 2: 1, 3: 0, 4: 6, 5: 5, 6: 4 }[date.today().weekday()]
 
 class XX1(DripZone):
     
@@ -290,10 +352,7 @@ class Drippy(object):
             elif OnSelect=='x':
                 on_seconds = int(float(OnParam) * 3600)
             else:
-                # Use history and schedule to decide how long to run for 
-                #days_to_go, inches, time = self.history()
-                #self.STATE = inches_to_time(0.75 - inches).seconds
-                on_seconds = 3600
+                on_seconds = "schedule"
 
             try:
                 self.zones[ID].on(on_seconds)
@@ -307,52 +366,10 @@ class Drippy(object):
                 cherrypy.log("Couldn't write off time to log file: %s" % log_message)
 
     def zone_table(self, ID):
-
         return self.zones[ID].table()
 
-    def history(self):
-        # Update the schedule
-        #
-        # Each week, catch up on any deficit for the previous
-        # month. That requires looking at the log, and determining how
-        # many inches we need to be at target. It useful to see what's
-        # coming, so this is written to make a prediction.
-
-        # Our watering day is Thursday (3). How many days to go until thursday?
-        
-        days_to_go = { 0: 3, 1: 2, 2: 1, 3: 0, 4: 6, 5: 5, 6: 4 }[date.today().weekday()]
-
-        # How much water has been lain over 30 previous days to next
-        # scheduled date?
-
-        times = drip_times("Green", daily=True)
-
-        total_time = timedelta(0)
-
-        for day in range(30):
-            when = date.today() + timedelta(days = days_to_go) - timedelta(days = day)
-            Y = when.strftime("%Y")
-            m = when.strftime("%m")
-            d = when.strftime("%d")
-            
-            if Y in times:
-                if m in times[Y]:
-                    if d in times[Y][m]:
-                        total_time += times[Y][m][d]
-
-        return (days_to_go, round(time_to_inches(total_time), 2), total_time)
-
-    def green_schedule(self):
-        days_to_go, inches, time = self.history()
-
-        result = ""
-
-        if days_to_go > 0:
-            result += "In %d days, the previous 30 days will total " % days_to_go
-        else:
-            result += "The previous 30 days total "
-
-        return result + "%f inches (%s). The deficit will be %f." % (inches, time, 3.0 - inches)
+    def zone_schedule(self, ID):
+        return self.zones[ID].schedule()
 
     index.exposed = True
     main_script.exposed = True
@@ -360,6 +377,11 @@ class Drippy(object):
     zone_state.exposed = True
     zone_control.exposed = True
     zone_table.exposed = True
+    zone_schedule.exposed = True
+
+
+# Have to use stptime to ensure it's available in threads
+datetime.strptime("Sun Aug 31 20:44:50 2012", "%a %b %d %H:%M:%S %Y")
 
 # GPIO on the RaspberryPy can be addressed as board resources or
 # something else

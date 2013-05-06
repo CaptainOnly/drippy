@@ -51,12 +51,12 @@ function zone_div(zone_id, zone_name) {
             $("#" + zone_id + " > #name").text(zone_name + " is " + data);
 	});
 
-	// $.post("green_schedule", function(data) {
-        //     $("#" + zone_id + " > #schedule").html(data);
-	// });
-    
 	$.post("zone_table", { ID: zone_id }, function(data) {
             $("#" + zone_id + " > #table").html(data);
+	});
+
+	$.post("zone_schedule", { ID: zone_id }, function(data) {
+            $("#" + zone_id + " > #schedule").html(data);
 	});
     };
 

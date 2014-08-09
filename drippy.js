@@ -1,5 +1,5 @@
 // <div id="state"></div>
-// <div id="schedule"></div>
+// <div id="history"></div>
 // <form id="form">
 // <input id="off"        type='submit' value='Off'>
 // <input id="on"         type='submit' value='On'>
@@ -14,7 +14,6 @@ function zone_div(zone_id, zone_name) {
     $("#zone_list").append('<div class="zone_div" id="' + zone_id + '"></div>');
     $("#" + zone_id).append('<div id="name"></div>');
     $("#" + zone_id).append('<div id="state"></div>');
-    $("#" + zone_id).append('<div id="schedule"></div>');
     $("#" + zone_id).append('<form id="form">');
     $("#" + zone_id).append('<input id="off"        type="submit" value="Off">');
     $("#" + zone_id).append('<input id="on"         type="submit" value="On">');
@@ -23,6 +22,7 @@ function zone_div(zone_id, zone_name) {
     $("#" + zone_id).append('<input id="time_x"     type="radio"  name="' + zone_id + '_time" value="x">This many hours:');
     $("#" + zone_id).append('<input id="time_x_val" type="text"   disabled="disabled">');
     $("#" + zone_id).append('</form>');
+    $("#" + zone_id).append('<div id="history"></div>');
     $("#" + zone_id).append('<div id="table"></div>');
 
     // Enable/Disable the numeric field depending on radio selection
@@ -55,8 +55,8 @@ function zone_div(zone_id, zone_name) {
             $("#" + zone_id + " > #table").html(data);
 	});
 
-	$.post("zone_schedule", { ID: zone_id }, function(data) {
-            $("#" + zone_id + " > #schedule").html(data);
+	$.post("zone_history", { ID: zone_id }, function(data) {
+            $("#" + zone_id + " > #history").html(data);
 	});
     };
 

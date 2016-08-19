@@ -387,7 +387,7 @@ datetime.strptime("Sun Aug 31 20:44:50 2012", "%a %b %d %H:%M:%S %Y")
 RPi.GPIO.setmode(RPi.GPIO.BOARD) 
     
 # Not sure why I need this
-cherrypy.config.update({'server.socket_host': '192.168.62.149',
+cherrypy.config.update({'server.socket_host': '192.168.1.3',
                         'server.socket_port': 80,
                        })
 
